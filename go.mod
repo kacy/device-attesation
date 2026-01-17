@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/fxamacker/cbor/v2 v2.5.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.160.0
 )
 
