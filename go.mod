@@ -1,6 +1,6 @@
 module github.com/kacy/device-attestation
 
-go 1.22
+go 1.25.5
 
 require (
 	github.com/fxamacker/cbor/v2 v2.5.0
