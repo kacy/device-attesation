@@ -151,8 +151,9 @@ func NewVerifier(cfg Config) (*Verifier, error) {
 	if !pool.AppendCertsFromPEM([]byte(appleAppAttestRootCA)) {
 		return nil, errors.New("failed to parse Apple root CA")
 	}
-	// Also add the development root CA for testing environments
-	pool.AppendCertsFromPEM([]byte(appleAppAttestDevRootCA))
+	// Also add the legacy root CA (same key, different DN encoding)
+	// Some intermediate certificates may chain to the older version
+	pool.AppendCertsFromPEM([]byte(appleAppAttestRootCALegacy))
 
 	timeout := cfg.ChallengeTimeout
 	if timeout == 0 {
@@ -560,12 +561,14 @@ func (v *Verifier) verifyKeyID(pubKey *ecdsa.PublicKey, keyID string) error {
 }
 
 // Apple App Attest Root CA certificate (Production)
+// Downloaded from: https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem
+// Valid until: 2045-03-15
 const appleAppAttestRootCA = `-----BEGIN CERTIFICATE-----
 MIICITCCAaegAwIBAgIQC/O+DvHN0uD7jG5yH2IXmDAKBggqhkjOPQQDAzBSMSYw
-JAYDVQQDEx1BcHBsZSBBcHAgQXR0ZXN0YXRpb24gUm9vdCBDQTETMBEGA1UEChMK
-QXBwbGUgSW5jLjETMBEGA1UECBMKQ2FsaWZvcm5pYTAeFw0yMDAzMTgxODMyNTNa
-Fw0zOTAzMTgwMDAwMDBaMFIxJjAkBgNVBAMTHUFwcGxlIEFwcCBBdHRlc3RhdGlv
-biBSb290IENBMRMwEQYDVQQKEwpBcHBsZSBJbmMuMRMwEQYDVQQIEwpDYWxpZm9y
+JAYDVQQDDB1BcHBsZSBBcHAgQXR0ZXN0YXRpb24gUm9vdCBDQTETMBEGA1UECgwK
+QXBwbGUgSW5jLjETMBEGA1UECAwKQ2FsaWZvcm5pYTAeFw0yMDAzMTgxODMyNTNa
+Fw00NTAzMTUwMDAwMDBaMFIxJjAkBgNVBAMMHUFwcGxlIEFwcCBBdHRlc3RhdGlv
+biBSb290IENBMRMwEQYDVQQKDApBcHBsZSBJbmMuMRMwEQYDVQQIDApDYWxpZm9y
 bmlhMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAERTHhmLW07ATaFQIEVwTtT4dyctdh
 NbJhFs/Ii2FdCgAHGbpphY3+d8qjuDngIN3WVhQUBHAoMeQ/cLiP1sOUtgjqK9au
 Yen1mMEvRq9Sk3Jm5X8U62H+xTD3FE9TgS41o0IwQDAPBgNVHRMBAf8EBTADAQH/
@@ -575,9 +578,10 @@ CgYIKoZIzj0EAwMDaAAwZQIwQgFGnByvsiVbpTKwSga0kP0e8EeDS4+sQmTvb7vn
 oyFraWVIyd/dganmrduC1bmTBGwD
 -----END CERTIFICATE-----`
 
-// Apple App Attest Root CA certificate (Development/Sandbox)
-// This is used when testing on development devices or simulators
-const appleAppAttestDevRootCA = `-----BEGIN CERTIFICATE-----
+// Apple App Attest Root CA certificate - older version with PrintableString encoding
+// Some intermediate certificates may chain to this version
+// Valid until: 2039-03-18
+const appleAppAttestRootCALegacy = `-----BEGIN CERTIFICATE-----
 MIICITCCAaegAwIBAgIQC/O+DvHN0uD7jG5yH2IXmDAKBggqhkjOPQQDAzBSMSYw
 JAYDVQQDEx1BcHBsZSBBcHAgQXR0ZXN0YXRpb24gUm9vdCBDQTETMBEGA1UEChMK
 QXBwbGUgSW5jLjETMBEGA1UECBMKQ2FsaWZvcm5pYTAeFw0yMDAzMTgxODMyNTNa
