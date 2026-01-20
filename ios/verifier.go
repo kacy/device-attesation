@@ -486,78 +486,33 @@ func (v *Verifier) extractCounter(authData []byte) uint32 {
 }
 
 // verifyNonce verifies the challenge binding in the attestation certificate.
-// Apple embeds SHA256(authData || clientDataHash) in an extension under OID 1.2.840.113635.100.8.*
+// Apple embeds SHA256(authData || clientDataHash) in extension OID 1.2.840.113635.100.8.2
+// See: https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server
 func (v *Verifier) verifyNonce(cert *x509.Certificate, authData, clientDataHash []byte) error {
-	// Compute expected nonce
-	composite := make([]byte, len(authData)+len(clientDataHash))
-	copy(composite, authData)
-	copy(composite[len(authData):], clientDataHash)
-	expected := sha256.Sum256(composite)
+	// Compute expected nonce: SHA256(authData || clientDataHash)
+	expected := sha256.Sum256(append(authData, clientDataHash...))
 
-	// Search all Apple App Attest extensions (1.2.840.113635.100.8.*)
-	// The nonce may be in .8.1 (original) or .8.5/.8.6/.8.7 (newer certificates)
+	// Find the credCert extension (OID 1.2.840.113635.100.8.2)
+	credCertOID := asn1.ObjectIdentifier{1, 2, 840, 113635, 100, 8, 2}
 	for _, ext := range cert.Extensions {
-		if !isAppleAppAttestOID(ext.Id) {
+		if !ext.Id.Equal(credCertOID) {
 			continue
 		}
-		// Try to extract and match the nonce from this extension
-		if nonce := extractNonce(ext.Value); nonce != nil && bytes.Equal(nonce, expected[:]) {
+
+		// Parse: SEQUENCE { OCTET STRING nonce }
+		var seq []asn1.RawValue
+		if _, err := asn1.Unmarshal(ext.Value, &seq); err != nil || len(seq) == 0 {
+			return errors.New("failed to parse credCert extension")
+		}
+
+		// The nonce is in the first element's bytes
+		if bytes.Equal(seq[0].Bytes, expected[:]) {
 			return nil
 		}
-	}
-	return errors.New("nonce not found in any Apple extension")
-}
-
-// isAppleAppAttestOID checks if the OID is under Apple's App Attest arc (1.2.840.113635.100.8.*)
-func isAppleAppAttestOID(oid asn1.ObjectIdentifier) bool {
-	return len(oid) == 7 &&
-		oid[0] == 1 && oid[1] == 2 && oid[2] == 840 &&
-		oid[3] == 113635 && oid[4] == 100 && oid[5] == 8
-}
-
-// extractNonce finds a 32-byte SHA256 hash anywhere in the ASN.1 data.
-// This is more robust than assuming a specific structure.
-func extractNonce(data []byte) []byte {
-	// Quick check: if we can find 32 consecutive bytes that look right, use them
-	// The nonce is always a SHA256 hash (32 bytes), usually wrapped in ASN.1 SEQUENCE/OCTET STRING
-
-	// Try structured parsing first: SEQUENCE { SEQUENCE { OCTET STRING } }
-	if nonce := parseNestedASN1(data); len(nonce) == 32 {
-		return nonce
+		return errors.New("nonce mismatch")
 	}
 
-	// Fallback: scan for any 32-byte OCTET STRING in the data
-	return findOctetString32(data)
-}
-
-// parseNestedASN1 tries to parse SEQUENCE { SEQUENCE { OCTET STRING } }
-func parseNestedASN1(data []byte) []byte {
-	var outer, inner asn1.RawValue
-	if rest, err := asn1.Unmarshal(data, &outer); err != nil || len(rest) > 0 {
-		return nil
-	}
-	if rest, err := asn1.Unmarshal(outer.Bytes, &inner); err != nil || len(rest) > 0 {
-		return nil
-	}
-	var nonce []byte
-	if _, err := asn1.Unmarshal(inner.Bytes, &nonce); err == nil && len(nonce) == 32 {
-		return nonce
-	}
-	if len(inner.Bytes) == 32 {
-		return inner.Bytes
-	}
-	return nil
-}
-
-// findOctetString32 scans ASN.1 data for a 32-byte OCTET STRING
-func findOctetString32(data []byte) []byte {
-	for i := 0; i < len(data)-33; i++ {
-		// Look for OCTET STRING tag (0x04) followed by length 32 (0x20)
-		if data[i] == 0x04 && data[i+1] == 0x20 {
-			return data[i+2 : i+34]
-		}
-	}
-	return nil
+	return errors.New("credCert extension not found")
 }
 
 func (v *Verifier) extractPublicKey(cert *x509.Certificate) (*ecdsa.PublicKey, error) {
