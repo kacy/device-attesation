@@ -128,6 +128,10 @@ type Config struct {
 	// KeyStore for storing iOS attestation public keys (optional).
 	// Required for assertion verification.
 	KeyStore ios.KeyStore
+
+	// SkipCertificateVerification skips the certificate chain verification for iOS.
+	// WARNING: Only use this for development/testing. Never in production!
+	SkipCertificateVerification bool
 }
 
 // Verifier verifies device attestations.
@@ -158,10 +162,11 @@ func NewVerifier(cfg Config) (Verifier, error) {
 
 	if len(cfg.IOSBundleIDs) > 0 {
 		iosVerifier, err := ios.NewVerifier(ios.Config{
-			BundleIDs:        cfg.IOSBundleIDs,
-			TeamID:           cfg.IOSTeamID,
-			ChallengeTimeout: cfg.ChallengeTimeout,
-			KeyStore:         cfg.KeyStore,
+			BundleIDs:                   cfg.IOSBundleIDs,
+			TeamID:                      cfg.IOSTeamID,
+			ChallengeTimeout:            cfg.ChallengeTimeout,
+			KeyStore:                    cfg.KeyStore,
+			SkipCertificateVerification: cfg.SkipCertificateVerification,
 		})
 		if err != nil {
 			return nil, err
@@ -198,11 +203,16 @@ func (v *verifier) Verify(ctx context.Context, req *Request) (*Result, error) {
 		if v.iosVerifier == nil {
 			return nil, ErrNotConfigured
 		}
+		// Default to first configured bundle ID if not specified
+		bundleID := req.BundleID
+		if bundleID == "" && len(v.config.IOSBundleIDs) > 0 {
+			bundleID = v.config.IOSBundleIDs[0]
+		}
 		iosReq := &ios.AttestationRequest{
 			Attestation: req.Attestation,
 			Challenge:   req.Challenge,
 			KeyID:       req.KeyID,
-			BundleID:    req.BundleID,
+			BundleID:    bundleID,
 		}
 		iosResult, err := v.iosVerifier.VerifyAttestation(ctx, iosReq)
 		if err != nil {
@@ -243,6 +253,11 @@ func (v *verifier) Verify(ctx context.Context, req *Request) (*Result, error) {
 func (v *verifier) VerifyAssertion(ctx context.Context, req *ios.AssertionRequest) (*Result, error) {
 	if v.iosVerifier == nil {
 		return nil, ErrNotConfigured
+	}
+
+	// Default to first configured bundle ID if not specified
+	if req.BundleID == "" && len(v.config.IOSBundleIDs) > 0 {
+		req.BundleID = v.config.IOSBundleIDs[0]
 	}
 
 	iosResult, err := v.iosVerifier.VerifyAssertion(ctx, req)

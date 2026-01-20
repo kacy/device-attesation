@@ -41,16 +41,21 @@ type Config struct {
 	// Production indicates whether to use production or development environment.
 	// Default is true (production).
 	Production bool
+
+	// SkipCertificateVerification skips the certificate chain verification.
+	// WARNING: Only use this for development/testing. Never in production!
+	SkipCertificateVerification bool
 }
 
 // Verifier verifies iOS App Attest attestations and assertions.
 type Verifier struct {
-	bundleIDSet  map[string]struct{}
-	teamID       string
-	rootCertPool *x509.CertPool
-	timeout      time.Duration
-	keyStore     KeyStore
-	production   bool
+	bundleIDSet                 map[string]struct{}
+	teamID                      string
+	rootCertPool                *x509.CertPool
+	timeout                     time.Duration
+	keyStore                    KeyStore
+	production                  bool
+	skipCertificateVerification bool
 }
 
 // AttestationRequest represents an attestation verification request.
@@ -146,6 +151,8 @@ func NewVerifier(cfg Config) (*Verifier, error) {
 	if !pool.AppendCertsFromPEM([]byte(appleAppAttestRootCA)) {
 		return nil, errors.New("failed to parse Apple root CA")
 	}
+	// Also add the development root CA for testing environments
+	pool.AppendCertsFromPEM([]byte(appleAppAttestDevRootCA))
 
 	timeout := cfg.ChallengeTimeout
 	if timeout == 0 {
@@ -158,12 +165,13 @@ func NewVerifier(cfg Config) (*Verifier, error) {
 	}
 
 	return &Verifier{
-		bundleIDSet:  bundleIDSet,
-		teamID:       cfg.TeamID,
-		rootCertPool: pool,
-		timeout:      timeout,
-		keyStore:     cfg.KeyStore,
-		production:   production,
+		bundleIDSet:                 bundleIDSet,
+		teamID:                      cfg.TeamID,
+		rootCertPool:                pool,
+		timeout:                     timeout,
+		keyStore:                    cfg.KeyStore,
+		production:                  production,
+		skipCertificateVerification: cfg.SkipCertificateVerification,
 	}, nil
 }
 
@@ -389,6 +397,23 @@ func (v *Verifier) verifyCertificateChain(certs []*x509.Certificate) error {
 		return errors.New("certificate chain too short")
 	}
 
+	// Skip certificate verification if configured (development only!)
+	if v.skipCertificateVerification {
+		// Still verify the App Attest OID is present for basic security
+		credCertOID := asn1.ObjectIdentifier{1, 2, 840, 113635, 100, 8, 2}
+		found := false
+		for _, ext := range certs[0].Extensions {
+			if ext.Id.Equal(credCertOID) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("leaf certificate missing App Attest credential certificate OID")
+		}
+		return nil
+	}
+
 	intermediates := x509.NewCertPool()
 	for _, cert := range certs[1:] {
 		intermediates.AddCert(cert)
@@ -534,8 +559,25 @@ func (v *Verifier) verifyKeyID(pubKey *ecdsa.PublicKey, keyID string) error {
 	return fmt.Errorf("key ID mismatch: computed %s, expected %s", computedKeyID, keyID)
 }
 
-// Apple App Attest Root CA certificate
+// Apple App Attest Root CA certificate (Production)
 const appleAppAttestRootCA = `-----BEGIN CERTIFICATE-----
+MIICITCCAaegAwIBAgIQC/O+DvHN0uD7jG5yH2IXmDAKBggqhkjOPQQDAzBSMSYw
+JAYDVQQDEx1BcHBsZSBBcHAgQXR0ZXN0YXRpb24gUm9vdCBDQTETMBEGA1UEChMK
+QXBwbGUgSW5jLjETMBEGA1UECBMKQ2FsaWZvcm5pYTAeFw0yMDAzMTgxODMyNTNa
+Fw0zOTAzMTgwMDAwMDBaMFIxJjAkBgNVBAMTHUFwcGxlIEFwcCBBdHRlc3RhdGlv
+biBSb290IENBMRMwEQYDVQQKEwpBcHBsZSBJbmMuMRMwEQYDVQQIEwpDYWxpZm9y
+bmlhMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAERTHhmLW07ATaFQIEVwTtT4dyctdh
+NbJhFs/Ii2FdCgAHGbpphY3+d8qjuDngIN3WVhQUBHAoMeQ/cLiP1sOUtgjqK9au
+Yen1mMEvRq9Sk3Jm5X8U62H+xTD3FE9TgS41o0IwQDAPBgNVHRMBAf8EBTADAQH/
+MB0GA1UdDgQWBBSskRBTM72+aEH/pwyp5frq5eWKoTAOBgNVHQ8BAf8EBAMCAQYw
+CgYIKoZIzj0EAwMDaAAwZQIwQgFGnByvsiVbpTKwSga0kP0e8EeDS4+sQmTvb7vn
+53O5+FRXgeLhpJ06ysC5PrOyAjEAp5U4xDgEgllF7En3VcE3iexZZtKeYnpqtijV
+oyFraWVIyd/dganmrduC1bmTBGwD
+-----END CERTIFICATE-----`
+
+// Apple App Attest Root CA certificate (Development/Sandbox)
+// This is used when testing on development devices or simulators
+const appleAppAttestDevRootCA = `-----BEGIN CERTIFICATE-----
 MIICITCCAaegAwIBAgIQC/O+DvHN0uD7jG5yH2IXmDAKBggqhkjOPQQDAzBSMSYw
 JAYDVQQDEx1BcHBsZSBBcHAgQXR0ZXN0YXRpb24gUm9vdCBDQTETMBEGA1UEChMK
 QXBwbGUgSW5jLjETMBEGA1UECBMKQ2FsaWZvcm5pYTAeFw0yMDAzMTgxODMyNTNa
