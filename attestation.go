@@ -129,6 +129,10 @@ type Config struct {
 	// Required for assertion verification.
 	KeyStore ios.KeyStore
 
+	// VerifyIOSOnProduction set whether it should verify
+	// the cert on production or development environment for iOS
+	VerifyIOSOnProduction bool
+
 	// SkipCertificateVerification skips the certificate chain verification for iOS.
 	// WARNING: Only use this for development/testing. Never in production!
 	SkipCertificateVerification bool
@@ -167,6 +171,7 @@ func NewVerifier(cfg Config) (Verifier, error) {
 			ChallengeTimeout:            cfg.ChallengeTimeout,
 			KeyStore:                    cfg.KeyStore,
 			SkipCertificateVerification: cfg.SkipCertificateVerification,
+			Production:                  cfg.VerifyIOSOnProduction,
 		})
 		if err != nil {
 			return nil, err

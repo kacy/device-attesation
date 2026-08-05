@@ -1,4 +1,4 @@
-module github.com/kacy/device-attestation
+module github.com/ricardo-ch/device-attestation
 
 go 1.25.5
 

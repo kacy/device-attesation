@@ -44,6 +44,10 @@ type IOSConfig struct {
 
 	// TeamID is your Apple Developer Team ID (required).
 	TeamID string
+
+	// VerifyOnProduction determine if the verifier should use production
+	// or development. If set to production, TeamID should not be nil
+	VerifyOnProduction *bool
 }
 
 // AndroidConfig holds Android-specific configuration.
@@ -110,6 +114,12 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		}
 		verifierCfg.IOSBundleIDs = cfg.IOS.BundleIDs
 		verifierCfg.IOSTeamID = cfg.IOS.TeamID
+
+		if cfg.IOS.VerifyOnProduction != nil {
+			verifierCfg.VerifyIOSOnProduction = *cfg.IOS.VerifyOnProduction
+		} else {
+			verifierCfg.VerifyIOSOnProduction = true
+		}
 	}
 
 	if cfg.Android != nil {
